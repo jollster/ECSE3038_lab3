@@ -5,7 +5,7 @@ from bson.json_util import dumps
 from json import loads
 import os
 from dotenv import load_dotenv
-from marshmallow import Schema,fields
+from marshmallow import Schema,fields, ValidationError
 app = Flask(__name__)
 
 load_dotenv()
@@ -17,7 +17,7 @@ class TankSchema(Schema):
     location = fields.String(required=True)
     lat = fields.Float(required=True)
     long = fields.Float(required=True)
-    percentage_full = fields.String(required=True)
+    percentage_full = fields.Integer(required=True)
 
 person={}
 
@@ -59,10 +59,13 @@ def data():
         tanks = mongo.db.tanks.find()
         return jsonify(loads(dumps(tanks)))
   if request.method == "POST":
-    newtank=TankSchema().load(request.json)
-    tank_id = mongo.db.tanks.insert_one(newtank).inserted_id
-    tank = mongo.db.tanks.find_one(tank_id)
-    return loads(dumps(tank))
+      try:
+        newtank=TankSchema().load(request.json)
+        tank_id = mongo.db.tanks.insert_one(newtank).inserted_id
+        tank = mongo.db.tanks.find_one(tank_id)
+        return loads(dumps(tank))
+      except ValidationError as ve:
+        return ve.messages, 400
 
 
 @app.route('/data/<ObjectId:id>', methods=["PATCH"])
@@ -74,7 +77,14 @@ def datapatch(id):
 @app.route('/data/<ObjectId:id>', methods=["DELETE"])
 def deletank(id):
     result = mongo.db.tanks.delete_one({"_id": id})
-    return {"success": True }
+    if result.deleted_count == 1:
+        return {
+      "success": True
+    }
+    else:
+        return {
+      "success": False
+    }, 400
 
 if __name__ =="__main__":
     app.run(debug=True,
