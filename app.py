@@ -1,13 +1,24 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request,json
 from flask_pymongo import PyMongo
 import datetime
+from bson.json_util import dumps
+from json import loads
+import os
+from dotenv import load_dotenv
+from marshmallow import Schema,fields
 app = Flask(__name__)
 
-app.config["MONGO_URI"]="mongodb+srv://lab3db:rSpFJI8hLVz0ZI5Y@cluster0.snfwm.mongodb.net/LAB3?retryWrites=true&w=majority"
+load_dotenv()
+
+app.config["MONGO_URI"]=os.getenv("MONGO_CONNECTION_STRING")
 mongo = PyMongo(app)
 
-list_of_tanks=[]
-id=0
+class TankSchema(Schema):
+    location = fields.String(required=True)
+    lat = fields.Float(required=True)
+    long = fields.Float(required=True)
+    percentage_full = fields.String(required=True)
+
 person={}
 
 @app.route('/', methods=['GET'])
@@ -45,43 +56,25 @@ def profile():
 @app.route('/data', methods=["GET","POST"])
 def data():
   if request.method == "GET":
-    return jsonify(list_of_tanks)
+        tanks = mongo.db.tanks.find()
+        return jsonify(loads(dumps(tanks)))
   if request.method == "POST":
-    global id
-    id+=1
-    tank={
-        "location":request.json["location"],
-        "lat":request.json["lat"],
-        "long":request.json["long"],
-        "percentage_full":request.json["percentage_full"],
-        "id":id
-    }
-    list_of_tanks.append(tank)
-    return jsonify(tank)
+    newtank=TankSchema().load(request.json)
+    tank_id = mongo.db.tanks.insert_one(newtank).inserted_id
+    tank = mongo.db.tanks.find_one(tank_id)
+    return loads(dumps(tank))
 
 
-@app.route('/data/<int:id>', methods=["PATCH"])
+@app.route('/data/<ObjectId:id>', methods=["PATCH"])
 def datapatch(id):
-  for x in list_of_tanks:
-    if id == x["id"]:
-      if "location" in request.json:
-        x["location"] = request.json["location"]    
-      if "lat" in request.json:
-        x["lat"] = request.json["lat"]
-      if "long" in request.json:
-        x["long"] = request.json["long"]
-      if "percentage_full" in request.json:
-        x["percentage_full"] = request.json["percentage_full"]
-  return jsonify(list_of_tanks[int(id)-1])
+    mongo.db.tanks.update_one({"_id":id},{"$set":request.data})
+    tank = mongo.db.tanks.find_one(id)
+    return loads(dumps(tank))
 
-@app.route('/data/<int:id>', methods=["DELETE"])
+@app.route('/data/<ObjectId:id>', methods=["DELETE"])
 def deletank(id):
-  for x in list_of_tanks:
-    if id == x["id"]:
-      list_of_tanks.remove(x);
-  return {
-    "success": True
-    }
+    result = mongo.db.tanks.delete_one({"_id": id})
+    return {"success": True }
 
 if __name__ =="__main__":
     app.run(debug=True,
